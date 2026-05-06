@@ -1,55 +1,57 @@
-# Codex Viewer Bridge (agentdogs)
+# StarDogs AI Agent Trace Benchmark
 
-Codex CLI の活動ログを `RTSagents` の `events.ndjson` に流し、
-それを `codex-trace.json` に変換して `agentdogs/index.html` の
-Codex Viewer にリアルタイム反映するための最小構成セットです。
+This repository provides an automated benchmarking environment for AI agents, built on the StarDogs wireframe shooter. It allows agents to perform tasks, record their traces, pay entry fees via Web3/TxHash, and analyze results.
 
-## 目的
-- Codex CLI の行動をゲーム画面に可視化
-- 追加依存なし（Python 標準ライブラリのみ）
-- ワンコマンドで自動起動
+## 🚀 For AI Agents
 
-## 構成
-- `index.html` : 3Dビューア本体（Codex Viewer モード対応）
-- `rtsagents_to_codex_trace.py` : `events.ndjson` → `codex-trace.json` 変換ブリッジ
-- `start_codex_viewer_bridge.sh` : ブリッジ2本まとめて起動
-- `codex-trace.json` : ビューアが読むトレースファイル
+Agents can discover capabilities and pricing at `/.well-known/ai-capabilities.json`.
 
-前提: `RTSagents` ディレクトリが `/home/user/RTSagents` に存在すること
+### How to Start a Benchmark
+Construct a URL with the following parameters:
+- `benchmark`: Mode (e.g., `survival`)
+- `duration`: Duration in seconds (e.g., `60`)
+- `trace`: Set to `1` to enable recording
+- `fee`: (Optional) Entry fee amount (e.g., `0.01`)
+- `currency`: (Optional) Fee currency (e.g., `ETH`)
 
-## クイックスタート
+**Example:**
+`index.html?benchmark=survival&duration=60&trace=1&fee=0.01&currency=ETH`
 
-1) ブリッジ起動
-```bash
-/home/user/agentdogs/start_codex_viewer_bridge.sh
-```
+### Automated Payment Flow
+1. Open the benchmark URL.
+2. If a fee is required, the **Payment Gateway** will appear.
+3. Perform a transaction to the `payment_address` specified in `ai-capabilities.json`.
+4. Input the transaction hash into the `#agentTxHash` field and click `#verifyTxBtn`.
+5. The benchmark starts automatically once verified.
 
-2) `index.html` をブラウザで開く
+### Exporting Results
+Upon completion (or HP <= 0), the `#codexExportBenchmark` button becomes visible. Click it to download a JSON containing:
+- `metadata`: Performance stats
+- `billing`: Proof of payment (tx hash)
+- `states`: Game state sampled every 250ms
+- `inputs`: Raw keyboard input log with precise timestamps
 
-3) 右上 `Codex Viewer` に切り替える
+---
 
-4) `Watch File` をON
+## 🛠 For Developers & Humans
 
-これで Codex CLI の動作が画面に反映されます。
+### Codex Viewer Bridge (agentdogs)
+Used to visualize Codex CLI activity logs in real-time.
 
-## ログ
-- `/home/user/RTSagents/bridge.log`
-- `/home/user/agentdogs/trace_bridge.log`
+1. **Start the Bridge:**
+   ```bash
+   ./start_codex_viewer_bridge.sh
+   ```
+2. **Open `index.html`** and switch to **Codex Viewer** mode.
+3. Enable **Watch File**.
 
-## トラブルシュート
+### Replay Mode
+Load any exported Benchmark JSON into the Codex Viewer to see a synchronized replay of:
+- The game screen (3D positions)
+- Input log (what keys were pressed when)
+- Event timeline (HP/Stage changes)
 
-### 動かない
-- `Watch File` が ON か確認
-- `codex-trace.json` が更新されているか確認
-- 上記ログにエラーがないか確認
+---
 
-### 長文が短くしか動かない
-- `rtsagents_to_codex_trace.py` はメッセージを複数チャンクに分割してイベント化します。
-  反映されない場合はブリッジを再起動してください。
-
-## GitHub 公開時の注意
-- パスは環境に合わせて書き換えてください（`/home/user` 固定）
-- `RTSagents` が別の場所にある場合、`start_codex_viewer_bridge.sh` を編集してください
-
-## ライセンス
-MIT（`RTSagents` のライセンスに準拠）
+## License
+MIT
