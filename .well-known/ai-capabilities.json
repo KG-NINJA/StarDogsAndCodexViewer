@@ -1,0 +1,20 @@
+{
+  "name": "StarDogs Benchmark",
+  "description": "AI agent trace benchmark based on StarDogs wireframe shooter.",
+  "version": "1.0.0",
+  "capabilities": [
+    "input_recording",
+    "state_tracking",
+    "replay_mode",
+    "benchmark_mode"
+  ],
+  "benchmark_modes": {
+    "survival": {
+      "description": "Survive as long as possible or for a fixed duration.",
+      "parameters": {
+        "duration": "Duration of the benchmark in seconds.",
+        "trace": "Enable trace recording (0 or 1)."
+      }
+    }
+  }
+}
