@@ -1,20 +1,30 @@
 {
   "name": "StarDogs Benchmark",
-  "description": "AI agent trace benchmark based on StarDogs wireframe shooter.",
-  "version": "1.0.0",
+  "description": "AI agent trace benchmark with billing support.",
+  "version": "1.1.0",
   "capabilities": [
     "input_recording",
     "state_tracking",
     "replay_mode",
-    "benchmark_mode"
+    "benchmark_mode",
+    "billing_support"
   ],
   "benchmark_modes": {
     "survival": {
       "description": "Survive as long as possible or for a fixed duration.",
       "parameters": {
         "duration": "Duration of the benchmark in seconds.",
-        "trace": "Enable trace recording (0 or 1)."
+        "trace": "Enable trace recording (0 or 1).",
+        "fee": "Entry fee amount (float).",
+        "currency": "Currency for the fee (e.g., ETH, SOL).",
+        "payment_address": "Target address for payment."
       }
     }
+  },
+  "billing": {
+    "supported_methods": ["Web3", "Manual Transaction Hash Verification"],
+    "default_currency": "ETH",
+    "default_fee": 0.01,
+    "payment_address": "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
   }
 }

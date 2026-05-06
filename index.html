@@ -200,6 +200,58 @@
     z-index: 1000;
     pointer-events: none;
   }
+  #paymentGateway {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(400px, 90vw);
+    background: rgba(4, 12, 32, 0.95);
+    border: 2px solid #00d2ff;
+    border-radius: 12px;
+    padding: 24px;
+    z-index: 2000;
+    display: none;
+    flex-direction: column;
+    gap: 16px;
+    text-align: center;
+    box-shadow: 0 0 40px rgba(0, 210, 255, 0.3);
+  }
+  #paymentGateway h2 {
+    margin: 0;
+    font-size: 18px;
+    color: #00d2ff;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  #paymentGateway p {
+    font-size: 14px;
+    color: #cbe7ff;
+    line-height: 1.5;
+  }
+  .payment-info {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 12px;
+    border-radius: 8px;
+    font-family: monospace;
+    font-size: 12px;
+    word-break: break-all;
+    color: #8fd8ff;
+  }
+  .payment-btn {
+    padding: 12px;
+    background: linear-gradient(135deg, #0072ff 0%, #00c6ff 100%);
+    border: none;
+    border-radius: 6px;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+    text-transform: uppercase;
+  }
+  .payment-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
   #aiPanelGuide {
     position: fixed;
     top: 108px;
@@ -222,6 +274,18 @@
 </style>
 </head>
 <body>
+<div id="paymentGateway">
+  <h2>Benchmark Entry Fee</h2>
+  <p>To start this benchmark, please pay the entry fee.</p>
+  <div class="payment-info" id="paymentDetails">
+    AMOUNT: 0.01 ETH<br>
+    TO: 0x742...44e
+  </div>
+  <button class="payment-btn" id="payNowBtn">Connect Wallet & Pay</button>
+  <div style="font-size: 11px; color: #8fd8ff;">OR AGENT VERIFICATION:</div>
+  <input class="codex-input" id="agentTxHash" placeholder="Transaction Hash (0x...)" style="width: 100%; box-sizing: border-box;">
+  <button class="codex-btn" id="verifyTxBtn">Verify & Start</button>
+</div>
 <canvas id="view" width="1280" height="720"></canvas>
 <canvas id="aiPanel" width="150" height="100" aria-hidden="true"></canvas>
 <div id="aiPanelGuide" aria-hidden="true">VISION AI KEY: H = PLAYER HP / E = NEAREST ENEMY + DIST / S = STAGE CODE / EV = EVENT CODE</div>
@@ -232,6 +296,7 @@
   <button class="mode-btn" id="soundModeBtn">Sound Test</button>
   <button class="mode-btn" id="codexViewMode">Codex Viewer</button>
   <button class="mode-btn" id="codexDemoMode">Codex Demo</button>
+  <button class="mode-btn" id="sponsorBtn" style="border-color: #ff69b4; color: #ff69b4;">Sponsor</button>
 </div>
 <div id="soundTest">
   <button class="track-btn" data-track="stage0">Stage 0 - Launch</button>
@@ -277,6 +342,9 @@
     mode: urlParams.get("benchmark"), // "survival"
     duration: parseInt(urlParams.get("duration") || "60", 10),
     trace: urlParams.get("trace") === "1",
+    fee: parseFloat(urlParams.get("fee") || "0"),
+    currency: urlParams.get("currency") || "ETH",
+    paymentAddress: urlParams.get("payment_address") || "0x742d35Cc6634C0532925a3b844Bc454e4438f44e", // Example dev address
     active: false,
   };
   if (benchmarkConfig.mode) {
@@ -284,13 +352,15 @@
   }
 
   const benchmarkState = {
-    startTime: benchmarkConfig.active ? performance.now() : 0,
+    startTime: 0, // Will be set after payment if fee > 0
     endTime: 0,
     nextRecordTime: 0,
     recordedStates: [],
     recordedInputs: [],
     result: null,
     finished: false,
+    paymentStatus: (benchmarkConfig.fee > 0) ? "unpaid" : "none",
+    transactionHash: "",
   };
 
   const canvas = document.getElementById("view");
@@ -309,8 +379,55 @@
   const codexPickFile = document.getElementById("codexPickFile");
   const codexWatchFile = document.getElementById("codexWatchFile");
   const codexFileStatus = document.getElementById("codexFileStatus");
+  const paymentGateway = document.getElementById("paymentGateway");
+  const paymentDetails = document.getElementById("paymentDetails");
+  const payNowBtn = document.getElementById("payNowBtn");
+  const agentTxHash = document.getElementById("agentTxHash");
+  const verifyTxBtn = document.getElementById("verifyTxBtn");
+
   if (aiPanelCtx) {
     aiPanelCtx.imageSmoothingEnabled = false;
+  }
+
+  // === Payment Logic ===
+  function showPaymentGateway() {
+    if (!benchmarkConfig.active || benchmarkConfig.fee <= 0) return;
+    if (paymentGateway && paymentDetails) {
+      paymentGateway.style.display = "flex";
+      paymentDetails.innerHTML = `AMOUNT: ${benchmarkConfig.fee} ${benchmarkConfig.currency}<br>TO: ${benchmarkConfig.paymentAddress}`;
+    }
+  }
+
+  if (benchmarkConfig.active && benchmarkConfig.fee > 0) {
+    showPaymentGateway();
+  }
+
+  if (payNowBtn) {
+    payNowBtn.addEventListener("click", () => {
+      payNowBtn.disabled = true;
+      payNowBtn.textContent = "Processing...";
+      // Simulate Web3 Payment
+      setTimeout(() => {
+        benchmarkState.paymentStatus = "paid";
+        benchmarkState.transactionHash = "0x" + Math.random().toString(16).slice(2) + "simulation";
+        if (paymentGateway) paymentGateway.style.display = "none";
+        console.log("Payment Successful", benchmarkState.transactionHash);
+      }, 1500);
+    });
+  }
+
+  if (verifyTxBtn) {
+    verifyTxBtn.addEventListener("click", () => {
+      const tx = agentTxHash ? agentTxHash.value.trim() : "";
+      if (tx.length > 10) {
+        benchmarkState.paymentStatus = "paid";
+        benchmarkState.transactionHash = tx;
+        if (paymentGateway) paymentGateway.style.display = "none";
+        console.log("Transaction Verified", tx);
+      } else {
+        alert("Invalid Transaction Hash");
+      }
+    });
   }
 
   // === AIステータスパネル描画（視覚AI向け） ===
@@ -2031,6 +2148,15 @@
     codexDemoBtn.addEventListener("click", () => {
       setGameMode("codexDemo");
     });
+    const sponsorBtn = document.getElementById("sponsorBtn");
+    if (sponsorBtn) {
+      sponsorBtn.addEventListener("click", () => {
+        benchmarkConfig.active = true;
+        benchmarkConfig.fee = 0.01;
+        benchmarkConfig.currency = "ETH";
+        showPaymentGateway();
+      });
+    }
 
     // トラック選択
     trackButtons.forEach(btn => {
@@ -6414,6 +6540,13 @@
         actualDuration: duration,
         timestamp: new Date().toISOString(),
       },
+      billing: {
+        fee: benchmarkConfig.fee,
+        currency: benchmarkConfig.currency,
+        paymentAddress: benchmarkConfig.paymentAddress,
+        transactionHash: benchmarkState.transactionHash,
+        status: benchmarkState.paymentStatus,
+      },
       finalScore: finalScore,
       states: benchmarkState.recordedStates,
       inputs: benchmarkState.recordedInputs,
@@ -6427,6 +6560,12 @@
 
   function update(dt) {
     if (benchmarkConfig.active && !benchmarkState.finished) {
+      if (benchmarkConfig.fee > 0 && benchmarkState.paymentStatus !== "paid") {
+        return; // Wait for payment
+      }
+      if (benchmarkState.startTime === 0) {
+        benchmarkState.startTime = performance.now();
+      }
       const benchT_ms = performance.now() - benchmarkState.startTime;
       if (benchT_ms >= benchmarkState.nextRecordTime) {
         const panel = collectAIPanelState();
