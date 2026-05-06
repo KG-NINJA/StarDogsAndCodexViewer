@@ -147,6 +147,23 @@
     font-size: 12px;
     color: #cce9ff;
   }
+  #codexInputLog, #codexEventLog {
+    font-size: 11px;
+    color: #a0d8ff;
+    max-height: 60px;
+    overflow-y: auto;
+    background: rgba(0, 0, 0, 0.25);
+    padding: 4px;
+    border-radius: 4px;
+    font-family: monospace;
+    margin-top: 4px;
+  }
+  #codexBenchmarkResult {
+    font-size: 12px;
+    color: #fff68f;
+    font-weight: bold;
+    margin-top: 4px;
+  }
   .track-btn {
     padding: 10px 20px;
     background: rgba(0, 60, 140, 0.8);
@@ -231,6 +248,7 @@
     <button class="codex-btn" id="codexPlay">Play</button>
     <button class="codex-btn" id="codexPause">Pause</button>
     <button class="codex-btn" id="codexReset">Reset</button>
+    <button class="codex-btn" id="codexExportBenchmark" style="display:none; border-color: #ffd700; color: #ffd700;">Export Trace JSON</button>
   </div>
   <div class="codex-row">
     <label><input type="checkbox" id="codexAutoFile" /> Auto File</label>
@@ -242,13 +260,39 @@
     <button class="codex-btn" id="codexWatchFile">Watch File</button>
     <span class="codex-status" id="codexFileStatus">FILE: none</span>
   </div>
-  <textarea id="codexTraceInput" spellcheck="false"></textarea>
+  <textarea id="codexTraceInput" spellcheck="false" placeholder="Paste Benchmark/Trace JSON here..."></textarea>
   <div id="codexTraceStatus"></div>
   <div id="codexEventReadout">EVENT: IDLE</div>
+  <div id="codexInputLog">INPUT LOG:</div>
+  <div id="codexEventLog">EVENT LOG:</div>
+  <div id="codexBenchmarkResult"></div>
 </div>
 <script>
 (() => {
   "use strict";
+
+  // === Benchmark Configuration ===
+  const urlParams = new URLSearchParams(window.location.search);
+  const benchmarkConfig = {
+    mode: urlParams.get("benchmark"), // "survival"
+    duration: parseInt(urlParams.get("duration") || "60", 10),
+    trace: urlParams.get("trace") === "1",
+    active: false,
+  };
+  if (benchmarkConfig.mode) {
+    benchmarkConfig.active = true;
+  }
+
+  const benchmarkState = {
+    startTime: benchmarkConfig.active ? performance.now() : 0,
+    endTime: 0,
+    nextRecordTime: 0,
+    recordedStates: [],
+    recordedInputs: [],
+    result: null,
+    finished: false,
+  };
+
   const canvas = document.getElementById("view");
   const ctx = canvas.getContext("2d", { alpha: false });
   const hudLabel = document.getElementById("hud");
@@ -315,7 +359,16 @@
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyW", "KeyA", "KeyS", "KeyD"].includes(ev.code)) {
       ev.preventDefault();
     }
-    keys.add(ev.code);
+    if (!keys.has(ev.code)) {
+      keys.add(ev.code);
+      if (benchmarkConfig.active && !benchmarkState.finished) {
+        benchmarkState.recordedInputs.push({
+          t: (performance.now() - benchmarkState.startTime) / 1000,
+          type: "keydown",
+          code: ev.code,
+        });
+      }
+    }
     if (!ev.repeat && ev.code === "KeyF") {
       missileRequest = true; // ミサイルは単発入力で発射要求
     }
@@ -323,7 +376,18 @@
       recordRollInput(ev.code);
     }
   }, { passive: false });
-  window.addEventListener("keyup", (ev) => keys.delete(ev.code));
+  window.addEventListener("keyup", (ev) => {
+    if (keys.has(ev.code)) {
+      keys.delete(ev.code);
+      if (benchmarkConfig.active && !benchmarkState.finished) {
+        benchmarkState.recordedInputs.push({
+          t: (performance.now() - benchmarkState.startTime) / 1000,
+          type: "keyup",
+          code: ev.code,
+        });
+      }
+    }
+  });
 
   // === ローリング入力管理 ===
   const rollComboPattern = ["ArrowRight", "ArrowLeft", "ArrowRight"];
@@ -1913,6 +1977,8 @@
     time: 0,
     idx: 0,
     entries: [],
+    inputs: [],
+    inputIdx: 0,
     trail: [],
     stageCode: "CD",
     eventCode: 10,
@@ -1944,6 +2010,9 @@
     const codexPlayBtn = document.getElementById("codexPlay");
     const codexPauseBtn = document.getElementById("codexPause");
     const codexResetBtn = document.getElementById("codexReset");
+    const codexExportBenchmarkBtn = document.getElementById("codexExportBenchmark");
+    const codexInputLog = document.getElementById("codexInputLog");
+    const codexBenchmarkResult = document.getElementById("codexBenchmarkResult");
 
     // モード切り替え
     gameModeBtn.addEventListener("click", () => {
@@ -1977,11 +2046,34 @@
 
     if (codexLoadBtn) {
       codexLoadBtn.addEventListener("click", () => {
-        const entries = parseCodexTrace(codexTraceInput ? codexTraceInput.value : "");
+        const text = codexTraceInput ? codexTraceInput.value : "";
+        let entries = [];
+        let inputs = [];
+        if (codexBenchmarkResult) codexBenchmarkResult.textContent = "";
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed.states && parsed.inputs) {
+            // Benchmark format
+            entries = (parsed.states || []).map((s, i) => normalizeCodexEntry(s, i));
+            inputs = parsed.inputs || [];
+            if (codexBenchmarkResult) {
+              codexBenchmarkResult.textContent = `FINAL SCORE: ${Math.round(parsed.finalScore || 0)}`;
+            }
+          } else {
+            entries = parseCodexTrace(text);
+          }
+        } catch (e) {
+          entries = parseCodexTrace(text);
+        }
         codexState.entries = entries;
+        codexState.inputs = inputs;
         codexState.time = 0;
         codexState.idx = 0;
+        codexState.inputIdx = 0;
         codexState.trail.length = 0;
+        if (codexInputLog) codexInputLog.innerHTML = "INPUT LOG:";
+        const codexEventLog = document.getElementById("codexEventLog");
+        if (codexEventLog) codexEventLog.innerHTML = "EVENT LOG:";
         if (entries.length) {
           applyCodexEntry(entries[0]);
         }
@@ -2008,7 +2100,12 @@
         codexState.playing = false;
         codexState.time = 0;
         codexState.idx = 0;
+        codexState.inputIdx = 0;
         codexState.trail.length = 0;
+        if (codexInputLog) codexInputLog.innerHTML = "INPUT LOG:";
+        const codexEventLog = document.getElementById("codexEventLog");
+        if (codexEventLog) codexEventLog.innerHTML = "EVENT LOG:";
+        if (codexBenchmarkResult) codexBenchmarkResult.textContent = "";
         if (codexState.entries.length) {
           applyCodexEntry(codexState.entries[0]);
         }
@@ -2016,6 +2113,18 @@
           codexState.playing = true;
         }
         refreshCodexStatus();
+      });
+    }
+    if (codexExportBenchmarkBtn) {
+      codexExportBenchmarkBtn.addEventListener("click", () => {
+        if (!benchmarkState.result) return;
+        const blob = new Blob([JSON.stringify(benchmarkState.result, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `stardogs-benchmark-${new Date().getTime()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
       });
     }
     if (codexAutoFile) {
@@ -2623,15 +2732,45 @@
     if (!codexState.active) return;
     if (!codexState.entries.length) return;
     if (codexState.playing) {
-      codexState.time += dt;
+      codexState.time += dt; // time in seconds
       while (codexState.idx < codexState.entries.length - 1
         && codexState.entries[codexState.idx + 1].t <= codexState.time) {
         codexState.idx += 1;
+        const entry = codexState.entries[codexState.idx];
+        const elog = document.getElementById("codexEventLog");
+        if (elog) {
+          const div = document.createElement("div");
+          div.textContent = `[${entry.t.toFixed(2)}s] EV:${entry.event} ST:${entry.stage} HP:${entry.hp}`;
+          elog.appendChild(div);
+          elog.scrollTop = elog.scrollHeight;
+        }
       }
-      if (codexState.idx >= codexState.entries.length - 1) {
+
+      // Synchronize inputs
+      if (codexState.inputs && codexState.inputs.length) {
+        while (codexState.inputIdx < codexState.inputs.length && codexState.inputs[codexState.inputIdx].t <= codexState.time) {
+          const input = codexState.inputs[codexState.inputIdx];
+          const log = document.getElementById("codexInputLog");
+          if (log) {
+            const entry = document.createElement("div");
+            entry.textContent = `[${input.t.toFixed(2)}s] ${input.type}: ${input.code}`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+          }
+          codexState.inputIdx += 1;
+        }
+      }
+
+      if (codexState.idx >= codexState.entries.length - 1 && (!codexState.inputs || codexState.inputIdx >= codexState.inputs.length)) {
+        // Reset loop
         codexState.time = 0;
         codexState.idx = 0;
+        codexState.inputIdx = 0;
         codexState.trail.length = 0;
+        const log = document.getElementById("codexInputLog");
+        if (log) log.innerHTML = "INPUT LOG:";
+        const elog = document.getElementById("codexEventLog");
+        if (elog) elog.innerHTML = "EVENT LOG:";
       }
     }
     applyCodexEntry(codexState.entries[codexState.idx]);
@@ -6262,7 +6401,53 @@
   }
 
   // === 自機とカメラの更新 ===
+  function finishBenchmark() {
+    if (benchmarkState.finished) return;
+    benchmarkState.finished = true;
+    benchmarkState.endTime = performance.now();
+    const duration = (benchmarkState.endTime - benchmarkState.startTime) / 1000;
+    const finalScore = Math.abs(player.pos.z - 40); // 40 is start z
+    benchmarkState.result = {
+      metadata: {
+        mode: benchmarkConfig.mode,
+        configDuration: benchmarkConfig.duration,
+        actualDuration: duration,
+        timestamp: new Date().toISOString(),
+      },
+      finalScore: finalScore,
+      states: benchmarkState.recordedStates,
+      inputs: benchmarkState.recordedInputs,
+    };
+    console.log("Benchmark Finished", benchmarkState.result);
+    if (benchmarkConfig.trace) {
+      const exportBtn = document.getElementById("codexExportBenchmark");
+      if (exportBtn) exportBtn.style.display = "inline-block";
+    }
+  }
+
   function update(dt) {
+    if (benchmarkConfig.active && !benchmarkState.finished) {
+      const benchT_ms = performance.now() - benchmarkState.startTime;
+      if (benchT_ms >= benchmarkState.nextRecordTime) {
+        const panel = collectAIPanelState();
+        benchmarkState.recordedStates.push({
+          t: benchT_ms / 1000,
+          hp: panel.hp,
+          enemyDist: panel.enemyDist,
+          stage: panel.stage,
+          event: panel.event,
+          x: player.pos.x,
+          y: player.pos.y,
+          z: player.pos.z,
+          roll: player.roll,
+        });
+        benchmarkState.nextRecordTime += 250;
+      }
+      if (benchT_ms >= benchmarkConfig.duration * 1000 || player.hp <= 0) {
+        finishBenchmark();
+      }
+    }
+
     simTime += dt;
     player.invuln = Math.max(0, player.invuln - dt);
     advanceShieldFixBanner(dt);
